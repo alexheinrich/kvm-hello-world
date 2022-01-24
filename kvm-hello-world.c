@@ -99,8 +99,8 @@ void vm_init(struct vm *vm, size_t mem_size)
 		exit(1);
 	}
 
-        if (ioctl(vm->fd, KVM_SET_TSS_ADDR, 0xfffbd000) < 0) {
-                perror("KVM_SET_TSS_ADDR");
+    if (ioctl(vm->fd, KVM_SET_TSS_ADDR, 0xfffbd000) < 0) {
+        perror("KVM_SET_TSS_ADDR");
 		exit(1);
 	}
 
@@ -134,13 +134,13 @@ void vcpu_init(struct vm *vm, struct vcpu *vcpu)
 	int vcpu_mmap_size;
 
 	vcpu->fd = ioctl(vm->fd, KVM_CREATE_VCPU, 0);
-        if (vcpu->fd < 0) {
+    if (vcpu->fd < 0) {
 		perror("KVM_CREATE_VCPU");
                 exit(1);
 	}
 
 	vcpu_mmap_size = ioctl(vm->sys_fd, KVM_GET_VCPU_MMAP_SIZE, 0);
-        if (vcpu_mmap_size <= 0) {
+    if (vcpu_mmap_size <= 0) {
 		perror("KVM_GET_VCPU_MMAP_SIZE");
                 exit(1);
 	}
@@ -169,13 +169,26 @@ int run_vm(struct vm *vm, struct vcpu *vcpu, size_t sz)
 			goto check;
 
 		case KVM_EXIT_IO:
-			if (vcpu->kvm_run->io.direction == KVM_EXIT_IO_OUT
-			    && vcpu->kvm_run->io.port == 0xE9) {
-				char *p = (char *)vcpu->kvm_run;
-				fwrite(p + vcpu->kvm_run->io.data_offset,
-				       vcpu->kvm_run->io.size, 1, stdout);
-				fflush(stdout);
-				continue;
+			if (vcpu->kvm_run->io.direction == KVM_EXIT_IO_OUT) {
+                uint16_t port = vcpu->kvm_run->io.port;
+
+                if (port == 0xE9) {
+                    char *p = (char *)vcpu->kvm_run;
+                    fwrite(p + vcpu->kvm_run->io.data_offset,
+                           vcpu->kvm_run->io.size, 1, stdout);
+                    fflush(stdout);
+                    continue;
+                } else if (port == 0xEA) {
+                    char *p = (char *)vcpu->kvm_run;
+                    uint32_t *value = 
+                        (uint32_t *)(p + vcpu->kvm_run->io.data_offset);
+                    printf("value: 0x%x\n", *value);
+                    //fwrite(p + vcpu->kvm_run->io.data_offset,
+                    //      1, vcpu->kvm_run->io.size, stdout);
+                    //fwrite("\n", 1, 1, stdout);
+                    //fflush(stdout);
+                    continue;
+                }
 			}
 
 			/* fall through */
@@ -217,7 +230,7 @@ int run_real_mode(struct vm *vm, struct vcpu *vcpu)
 
 	printf("Testing real mode\n");
 
-        if (ioctl(vcpu->fd, KVM_GET_SREGS, &sregs) < 0) {
+    if (ioctl(vcpu->fd, KVM_GET_SREGS, &sregs) < 0) {
 		perror("KVM_GET_SREGS");
 		exit(1);
 	}
@@ -225,7 +238,7 @@ int run_real_mode(struct vm *vm, struct vcpu *vcpu)
 	sregs.cs.selector = 0;
 	sregs.cs.base = 0;
 
-        if (ioctl(vcpu->fd, KVM_SET_SREGS, &sregs) < 0) {
+    if (ioctl(vcpu->fd, KVM_SET_SREGS, &sregs) < 0) {
 		perror("KVM_SET_SREGS");
 		exit(1);
 	}
@@ -277,14 +290,14 @@ int run_protected_mode(struct vm *vm, struct vcpu *vcpu)
 
 	printf("Testing protected mode\n");
 
-        if (ioctl(vcpu->fd, KVM_GET_SREGS, &sregs) < 0) {
+    if (ioctl(vcpu->fd, KVM_GET_SREGS, &sregs) < 0) {
 		perror("KVM_GET_SREGS");
 		exit(1);
 	}
 
 	setup_protected_mode(&sregs);
 
-        if (ioctl(vcpu->fd, KVM_SET_SREGS, &sregs) < 0) {
+    if (ioctl(vcpu->fd, KVM_SET_SREGS, &sregs) < 0) {
 		perror("KVM_SET_SREGS");
 		exit(1);
 	}
@@ -334,7 +347,7 @@ int run_paged_32bit_mode(struct vm *vm, struct vcpu *vcpu)
 	setup_protected_mode(&sregs);
 	setup_paged_32bit_mode(vm, &sregs);
 
-        if (ioctl(vcpu->fd, KVM_SET_SREGS, &sregs) < 0) {
+    if (ioctl(vcpu->fd, KVM_SET_SREGS, &sregs) < 0) {
 		perror("KVM_SET_SREGS");
 		exit(1);
 	}
@@ -408,14 +421,14 @@ int run_long_mode(struct vm *vm, struct vcpu *vcpu)
 
 	printf("Testing 64-bit mode\n");
 
-        if (ioctl(vcpu->fd, KVM_GET_SREGS, &sregs) < 0) {
+    if (ioctl(vcpu->fd, KVM_GET_SREGS, &sregs) < 0) {
 		perror("KVM_GET_SREGS");
 		exit(1);
 	}
 
 	setup_long_mode(vm, &sregs);
 
-        if (ioctl(vcpu->fd, KVM_SET_SREGS, &sregs) < 0) {
+    if (ioctl(vcpu->fd, KVM_SET_SREGS, &sregs) < 0) {
 		perror("KVM_SET_SREGS");
 		exit(1);
 	}

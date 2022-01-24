@@ -157,12 +157,15 @@ int run_vm(struct vm *vm, struct vcpu *vcpu, size_t sz)
 {
 	struct kvm_regs regs;
 	uint64_t memval = 0;
+    uint32_t numExits = 0;
 
 	for (;;) {
 		if (ioctl(vcpu->fd, KVM_RUN, 0) < 0) {
 			perror("KVM_RUN");
 			exit(1);
 		}
+        
+        ++numExits;
 
 		switch (vcpu->kvm_run->exit_reason) {
 		case KVM_EXIT_HLT:
@@ -187,9 +190,28 @@ int run_vm(struct vm *vm, struct vcpu *vcpu, size_t sz)
                     //      1, vcpu->kvm_run->io.size, stdout);
                     //fwrite("\n", 1, 1, stdout);
                     //fflush(stdout);
+                    
+                    continue;
+                } else if (port == 0xEC) {
+                    char *p = (char *)vcpu->kvm_run;
+                    uint32_t *value = 
+                        (uint32_t *)(p + vcpu->kvm_run->io.data_offset);
+                    printf("value string: %c\n", *value);
+                    printf("string: %s\n", &vm->mem[*value]);
+
                     continue;
                 }
-			}
+			} else if (vcpu->kvm_run->io.direction == KVM_EXIT_IO_IN) {
+                uint16_t port = vcpu->kvm_run->io.port;
+                if (port == 0xEB) {
+                    char *p = (char *)vcpu->kvm_run;
+                    uint32_t *dest =
+                        (uint32_t *)(p + vcpu->kvm_run->io.data_offset);
+                    *dest = numExits;
+                    vcpu->kvm_run->io.size = 4;
+                    continue;
+                }
+            }
 
 			/* fall through */
 		default:

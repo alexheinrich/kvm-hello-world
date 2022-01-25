@@ -242,82 +242,6 @@ int run_vm(struct vm *vm, struct vcpu *vcpu, size_t sz)
 	return 1;
 }
 
-static void setup_protected_mode(struct kvm_sregs *sregs)
-{
-	struct kvm_segment seg = {
-		.base = 0,
-		.limit = 0xffffffff,
-		.selector = 1 << 3,
-		.present = 1,
-		.type = 11, /* Code: execute, read, accessed */
-		.dpl = 0,
-		.db = 1,
-		.s = 1, /* Code/data */
-		.l = 0,
-		.g = 1, /* 4KB granularity */
-	};
-
-	sregs->cr0 |= CR0_PE; /* enter protected mode */
-
-	sregs->cs = seg;
-
-	seg.type = 3; /* Data: read/write, accessed */
-	seg.selector = 2 << 3;
-	sregs->ds = sregs->es = sregs->fs = sregs->gs = sregs->ss = seg;
-}
-
-extern const unsigned char guest32[], guest32_end[];
-
-static void setup_paged_32bit_mode(struct vm *vm, struct kvm_sregs *sregs)
-{
-	uint32_t pd_addr = 0x2000;
-	uint32_t *pd = (void *)(vm->mem + pd_addr);
-
-	/* A single 4MB page to cover the memory region */
-	pd[0] = PDE32_PRESENT | PDE32_RW | PDE32_USER | PDE32_PS;
-	/* Other PDEs are left zeroed, meaning not present. */
-
-	sregs->cr3 = pd_addr;
-	sregs->cr4 = CR4_PSE;
-	sregs->cr0
-		= CR0_PE | CR0_MP | CR0_ET | CR0_NE | CR0_WP | CR0_AM | CR0_PG;
-	sregs->efer = 0;
-}
-
-int run_paged_32bit_mode(struct vm *vm, struct vcpu *vcpu)
-{
-	struct kvm_sregs sregs;
-	struct kvm_regs regs;
-
-	printf("Testing 32-bit paging\n");
-
-        if (ioctl(vcpu->fd, KVM_GET_SREGS, &sregs) < 0) {
-		perror("KVM_GET_SREGS");
-		exit(1);
-	}
-
-	setup_protected_mode(&sregs);
-	setup_paged_32bit_mode(vm, &sregs);
-
-    if (ioctl(vcpu->fd, KVM_SET_SREGS, &sregs) < 0) {
-		perror("KVM_SET_SREGS");
-		exit(1);
-	}
-
-	memset(&regs, 0, sizeof(regs));
-	/* Clear all FLAGS bits, except bit 1 which is always set. */
-	regs.rflags = 2;
-	regs.rip = 0;
-
-	if (ioctl(vcpu->fd, KVM_SET_REGS, &regs) < 0) {
-		perror("KVM_SET_REGS");
-		exit(1);
-	}
-
-	memcpy(vm->mem, guest32, guest32_end-guest32);
-	return run_vm(vm, vcpu, 4);
-}
-
 extern const unsigned char guest64[], guest64_end[];
 
 static void setup_64bit_code_segment(struct kvm_sregs *sregs)
@@ -407,23 +331,18 @@ int main(int argc, char **argv)
 	struct vm vm;
 	struct vcpu vcpu;
 	enum {
-		PAGED_32BIT_MODE,
 		LONG_MODE,
 	} mode = LONG_MODE;
 	int opt;
 
-	while ((opt = getopt(argc, argv, "pl")) != -1) {
+	while ((opt = getopt(argc, argv, "l")) != -1) {
 		switch (opt) {
-		case 'p':
-			mode = PAGED_32BIT_MODE;
-			break;
-
 		case 'l':
 			mode = LONG_MODE;
 			break;
 
 		default:
-			fprintf(stderr, "Usage: %s [ -p | -l ]\n",
+			fprintf(stderr, "Usage: %s [ -l ]\n",
 				argv[0]);
 			return 1;
 		}
@@ -433,9 +352,6 @@ int main(int argc, char **argv)
 	vcpu_init(&vm, &vcpu);
 
 	switch (mode) {
-	case PAGED_32BIT_MODE:
-		return !run_paged_32bit_mode(&vm, &vcpu);
-
 	case LONG_MODE:
 		return !run_long_mode(&vm, &vcpu);
 	}

@@ -268,39 +268,6 @@ static void setup_protected_mode(struct kvm_sregs *sregs)
 
 extern const unsigned char guest32[], guest32_end[];
 
-int run_protected_mode(struct vm *vm, struct vcpu *vcpu)
-{
-	struct kvm_sregs sregs;
-	struct kvm_regs regs;
-
-	printf("Testing protected mode\n");
-
-    if (ioctl(vcpu->fd, KVM_GET_SREGS, &sregs) < 0) {
-		perror("KVM_GET_SREGS");
-		exit(1);
-	}
-
-	setup_protected_mode(&sregs);
-
-    if (ioctl(vcpu->fd, KVM_SET_SREGS, &sregs) < 0) {
-		perror("KVM_SET_SREGS");
-		exit(1);
-	}
-
-	memset(&regs, 0, sizeof(regs));
-	/* Clear all FLAGS bits, except bit 1 which is always set. */
-	regs.rflags = 2;
-	regs.rip = 0;
-
-	if (ioctl(vcpu->fd, KVM_SET_REGS, &regs) < 0) {
-		perror("KVM_SET_REGS");
-		exit(1);
-	}
-
-	memcpy(vm->mem, guest32, guest32_end-guest32);
-	return run_vm(vm, vcpu, 4);
-}
-
 static void setup_paged_32bit_mode(struct vm *vm, struct kvm_sregs *sregs)
 {
 	uint32_t pd_addr = 0x2000;
@@ -440,18 +407,13 @@ int main(int argc, char **argv)
 	struct vm vm;
 	struct vcpu vcpu;
 	enum {
-		PROTECTED_MODE,
 		PAGED_32BIT_MODE,
 		LONG_MODE,
-	} mode = PROTECTED_MODE;
+	} mode = LONG_MODE;
 	int opt;
 
-	while ((opt = getopt(argc, argv, "spl")) != -1) {
+	while ((opt = getopt(argc, argv, "pl")) != -1) {
 		switch (opt) {
-		case 's':
-			mode = PROTECTED_MODE;
-			break;
-
 		case 'p':
 			mode = PAGED_32BIT_MODE;
 			break;
@@ -461,7 +423,7 @@ int main(int argc, char **argv)
 			break;
 
 		default:
-			fprintf(stderr, "Usage: %s [ -s | -p | -l ]\n",
+			fprintf(stderr, "Usage: %s [ -p | -l ]\n",
 				argv[0]);
 			return 1;
 		}
@@ -471,9 +433,6 @@ int main(int argc, char **argv)
 	vcpu_init(&vm, &vcpu);
 
 	switch (mode) {
-	case PROTECTED_MODE:
-		return !run_protected_mode(&vm, &vcpu);
-
 	case PAGED_32BIT_MODE:
 		return !run_paged_32bit_mode(&vm, &vcpu);
 

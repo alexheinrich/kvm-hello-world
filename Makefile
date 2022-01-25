@@ -3,7 +3,6 @@ CFLAGS = -Wall -Wextra -O2
 
 .PHONY: run
 run: kvm-hello-world
-	./kvm-hello-world -s
 	./kvm-hello-world -p
 	./kvm-hello-world -l
 

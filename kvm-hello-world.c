@@ -196,7 +196,6 @@ int run_vm(struct vm *vm, struct vcpu *vcpu, size_t sz)
                     char *p = (char *)vcpu->kvm_run;
                     uint32_t *value = 
                         (uint32_t *)(p + vcpu->kvm_run->io.data_offset);
-                    printf("value string: %c\n", *value);
                     printf("string: %s\n", &vm->mem[*value]);
 
                     continue;
@@ -241,42 +240,6 @@ int run_vm(struct vm *vm, struct vcpu *vcpu, size_t sz)
 	}
 
 	return 1;
-}
-
-extern const unsigned char guest16[], guest16_end[];
-
-int run_real_mode(struct vm *vm, struct vcpu *vcpu)
-{
-	struct kvm_sregs sregs;
-	struct kvm_regs regs;
-
-	printf("Testing real mode\n");
-
-    if (ioctl(vcpu->fd, KVM_GET_SREGS, &sregs) < 0) {
-		perror("KVM_GET_SREGS");
-		exit(1);
-	}
-
-	sregs.cs.selector = 0;
-	sregs.cs.base = 0;
-
-    if (ioctl(vcpu->fd, KVM_SET_SREGS, &sregs) < 0) {
-		perror("KVM_SET_SREGS");
-		exit(1);
-	}
-
-	memset(&regs, 0, sizeof(regs));
-	/* Clear all FLAGS bits, except bit 1 which is always set. */
-	regs.rflags = 2;
-	regs.rip = 0;
-
-	if (ioctl(vcpu->fd, KVM_SET_REGS, &regs) < 0) {
-		perror("KVM_SET_REGS");
-		exit(1);
-	}
-
-	memcpy(vm->mem, guest16, guest16_end-guest16);
-	return run_vm(vm, vcpu, 2);
 }
 
 static void setup_protected_mode(struct kvm_sregs *sregs)
@@ -477,19 +440,14 @@ int main(int argc, char **argv)
 	struct vm vm;
 	struct vcpu vcpu;
 	enum {
-		REAL_MODE,
 		PROTECTED_MODE,
 		PAGED_32BIT_MODE,
 		LONG_MODE,
-	} mode = REAL_MODE;
+	} mode = PROTECTED_MODE;
 	int opt;
 
-	while ((opt = getopt(argc, argv, "rspl")) != -1) {
+	while ((opt = getopt(argc, argv, "spl")) != -1) {
 		switch (opt) {
-		case 'r':
-			mode = REAL_MODE;
-			break;
-
 		case 's':
 			mode = PROTECTED_MODE;
 			break;
@@ -503,7 +461,7 @@ int main(int argc, char **argv)
 			break;
 
 		default:
-			fprintf(stderr, "Usage: %s [ -r | -s | -p | -l ]\n",
+			fprintf(stderr, "Usage: %s [ -s | -p | -l ]\n",
 				argv[0]);
 			return 1;
 		}
@@ -513,9 +471,6 @@ int main(int argc, char **argv)
 	vcpu_init(&vm, &vcpu);
 
 	switch (mode) {
-	case REAL_MODE:
-		return !run_real_mode(&vm, &vcpu);
-
 	case PROTECTED_MODE:
 		return !run_protected_mode(&vm, &vcpu);
 

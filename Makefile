@@ -1,5 +1,6 @@
 CC := gcc
-CFLAGS = -Wall -Wextra -O2
+CFLAGS := -Wall -Wextra -O2
+GUEST_DIR := guest
 
 .PHONY: run
 run: kvm-hello-world
@@ -9,26 +10,25 @@ run: kvm-hello-world
 kvm-hello-world: kvm-hello-world.o payload.o
 	$(CC) -g $^ -o $@
 
-payload.o: payload.ld guest32.img.o guest64.img.o
+payload.o: payload.ld build/guest32.img.o build/guest64.img.o
 	$(LD) -T $< -o $@
 
-guest64.o: guest.c
+build/guest64.o: $(GUEST_DIR)/guest.c
 	$(CC) $(CFLAGS) -m64 -ffreestanding -fno-pic -c -o $@ $^
 
-guest64.img: guest64.o
-	$(LD) -T guest.ld $^ -o $@
+build/guest64.img: build/guest64.o
+	$(LD) -T $(GUEST_DIR)/guest.ld $^ -o $@
 
-guest32.o: guest.c
+build/guest32.o: $(GUEST_DIR)/guest.c
 	$(CC) $(CFLAGS) -m32 -ffreestanding -fno-pic -c -o $@ $^
 
-guest32.img: guest32.o
-	$(LD) -T guest.ld -m elf_i386 $^ -o $@
+build/guest32.img: build/guest32.o
+	$(LD) -T $(GUEST_DIR)/guest.ld -m elf_i386 $^ -o $@
 
-%.img.o: %.img
+build/%.img.o: build/%.img
 	$(LD) -b binary -r $^ -o $@
 
 .PHONY: clean
 clean:
-	$(RM) kvm-hello-world kvm-hello-world.o payload.o \
-		guest32.o guest32.img guest32.img.o \
-		guest64.o guest64.img guest64.img.o
+	rm -f kvm-hello-world
+	rm -f build/*

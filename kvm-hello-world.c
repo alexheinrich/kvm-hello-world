@@ -353,15 +353,15 @@ static void setup_long_mode(struct vm *vm, struct kvm_sregs *sregs)
 	uint64_t pd_addr = 0x4000;
 	uint64_t *pd = (void *)(vm->mem + pd_addr);
 
-	pml4[0] = PDE64_PRESENT | PDE64_RW | PDE64_USER | pdpt_addr;
-	pdpt[0] = PDE64_PRESENT | PDE64_RW | PDE64_USER | pd_addr;
-	pd[0] = PDE64_PRESENT | PDE64_RW | PDE64_USER | PDE64_PS;
+	pml4[0] = PDE64_PRESENT | PDE64_RW | pdpt_addr;
+	pdpt[0] = PDE64_PRESENT | PDE64_RW | pd_addr;
+	pd[0] = PDE64_PRESENT | PDE64_RW | PDE64_PS;
 
 	sregs->cr3 = pml4_addr;
 	sregs->cr4 = CR4_PAE;
 	sregs->cr0
 		= CR0_PE | CR0_MP | CR0_ET | CR0_NE | CR0_WP | CR0_AM | CR0_PG;
-	sregs->efer = EFER_LME | EFER_LMA;
+	sregs->efer = EFER_LME | EFER_LMA | EFER_SCE;
 
 	setup_64bit_code_segment(sregs);
 }
@@ -429,7 +429,7 @@ int main(int argc, char **argv)
 		}
 	}
 
-	vm_init(&vm, 0x200000);
+	vm_init(&vm, 0x2000000);
 	vcpu_init(&vm, &vcpu);
 
 	switch (mode) {

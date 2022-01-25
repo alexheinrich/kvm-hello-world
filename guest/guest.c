@@ -34,7 +34,8 @@ static uint32_t getNumExits() {
 
 static void display(const char *str) {
     uint32_t port = 0xEC;
-    out(0xEC, (uint32_t)str, L_LEN);
+    uint32_t str_trunc = (uint32_t)str;
+    out(0xEC, str_trunc, L_LEN);
 }
 
 void

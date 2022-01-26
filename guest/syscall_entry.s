@@ -20,7 +20,8 @@ syscall_entry:
 
   /* the forth argument */
   mov rcx, r10
-//  call syscall_handler
+  // mov rax, 99
+  call syscall_handler
 
   pop r11
   pop r10

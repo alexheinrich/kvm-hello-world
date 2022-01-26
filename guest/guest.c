@@ -1,6 +1,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+extern uint32_t syscall_handler();
+
 typedef enum {
     B_LEN = 1,
     W_LEN = 2,
@@ -33,8 +35,7 @@ static uint32_t getNumExits() {
 }
 
 static void display(const char *str) {
-    uint32_t port = 0xEC;
-    uint32_t str_trunc = (uint32_t)str;
+    uint32_t str_trunc = (uint32_t) ((uint64_t)str & 0xFFFFFFFF);
     out(0xEC, str_trunc, L_LEN);
 }
 
@@ -50,6 +51,9 @@ _start(void) {
     printVal(0x30313233);
 
     printVal(getNumExits());
+
+    int i = syscall_handler();
+    printVal(i);
 
     display("Lorem ipsum\n");
 	*(long *) 0x400 = 42;

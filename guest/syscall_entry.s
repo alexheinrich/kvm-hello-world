@@ -1,4 +1,4 @@
-.globl syscall_entry, kernel_stack
+.globl syscall_entry, register_syscall, kernel_stack
 .extern syscall_handler
 .intel_syntax noprefix
 
@@ -35,3 +35,21 @@ syscall_entry:
   mov rsp, [rip + user_stack]
   .byte 0x48
   sysret
+
+register_syscall:
+  xor rax, rax
+  mov rdx, 0x00200008
+  mov ecx, 0xc0000081 /* MSR_STAR */
+  wrmsr
+
+  mov eax, 0x3f7fd5
+  xor rdx, rdx
+  mov ecx, 0xc0000084 /* MSR_SYSCALL_MASK */
+  wrmsr
+
+  lea rdi, [rip + syscall_handler]
+  mov eax, edi
+  mov rdx, rdi
+  shr rdx, 32
+  mov ecx, 0xc0000082 /* MSR_LSTAR */
+  wrmsr

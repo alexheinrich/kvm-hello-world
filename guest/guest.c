@@ -1,7 +1,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
-extern uint32_t syscall_handler();
+#include "../hypercalls.h"
+
+extern void register_syscall();
 
 typedef enum {
     B_LEN = 1,
@@ -39,6 +41,14 @@ static void display(const char *str) {
     out(0xEC, str_trunc, L_LEN);
 }
 
+static void hc_open(const char *fn) {
+    uint32_t fn_uint = (uint32_t) ((uint64_t)fn & 0xFFFFFFFF);
+    asm("out %0,%1" :  : "a" (fn_uint),  "Nd" (HC_OPEN) : "memory");
+    int32_t fd;
+    asm("in %1,%0" :  "=a" (fd) : "Nd" (HC_OPEN) : "memory");
+    printVal(fd);
+}
+
 void
 __attribute__((noreturn))
 __attribute__((section(".start")))
@@ -52,8 +62,10 @@ _start(void) {
 
     printVal(getNumExits());
 
-    int i = syscall_handler();
-    printVal(i);
+    // not working: causes IO_EXIT on port 0...
+    // register_syscall();
+    
+    hc_open("example.dat");
 
     display("Lorem ipsum\n");
 	*(long *) 0x400 = 42;

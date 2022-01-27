@@ -1,3 +1,4 @@
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -8,6 +9,8 @@
 #include <string.h>
 #include <stdint.h>
 #include <linux/kvm.h>
+
+#include "hypercalls.h"
 
 /* CR0 bits */
 #define CR0_PE 1u
@@ -63,12 +66,65 @@
 #define PDE64_PS (1U << 7)
 #define PDE64_G (1U << 8)
 
+#define MAX_FS 16
 
 struct vm {
 	int sys_fd;
 	int fd;
 	char *mem;
 };
+
+typedef struct {
+    bool open;
+    int hv_fd;
+} fd_t;
+
+fd_t vm_fds[MAX_FS];
+
+static void init_vm_fds(void)
+{
+    for (int i = 0; i < 3; ++i) {
+        vm_fds[i].open = true;
+        vm_fds[i].hv_fd = 0;
+    }
+}
+
+static int add_vm_fd(void)
+{
+    for (int i = 0; i < MAX_FS; ++i) {
+        if (vm_fds[i].open == false) {
+            vm_fds[i].open = true;
+
+            return i;
+        }
+    }
+
+    return -ENFILE;
+}
+
+static void hv_handle_open(struct vm *vm, struct kvm_run *run) {
+    static int fd_vm;
+
+    if (run->io.direction == KVM_EXIT_IO_OUT) {
+        fd_vm = add_vm_fd();
+        if (fd_vm < 0) {
+            return;
+        }
+
+        uint32_t *fn_off = 
+            (uint32_t *)((uint8_t *)run + run->io.data_offset);
+        char *fn = &vm->mem[*fn_off];
+        int fd_hv = open(fn, O_RDONLY);
+
+        vm_fds[fd_vm].hv_fd = fd_hv;
+        *fn_off = fd_vm;
+    } else if (run->io.direction == KVM_EXIT_IO_IN) {
+        uint32_t *dest = 
+            (uint32_t *)((uint8_t *)run + run->io.data_offset);
+        *dest = fd_vm;
+        run->io.size = 4;
+    }
+}
 
 void vm_init(struct vm *vm, size_t mem_size)
 {
@@ -171,10 +227,18 @@ int run_vm(struct vm *vm, struct vcpu *vcpu, size_t sz)
 		case KVM_EXIT_HLT:
 			goto check;
 
-		case KVM_EXIT_IO:
-			if (vcpu->kvm_run->io.direction == KVM_EXIT_IO_OUT) {
-                uint16_t port = vcpu->kvm_run->io.port;
+		case KVM_EXIT_IO: {
+            uint16_t port = vcpu->kvm_run->io.port;
+            if (vcpu->kvm_run->io.port & HC_VECTOR) {
+                switch(port) {
+                    case HC_OPEN:
+                        hv_handle_open(vm, vcpu->kvm_run);
+                        break;
+                }
+                continue;
+            }
 
+			if (vcpu->kvm_run->io.direction == KVM_EXIT_IO_OUT) {
                 if (port == 0xE9) {
                     char *p = (char *)vcpu->kvm_run;
                     fwrite(p + vcpu->kvm_run->io.data_offset,
@@ -200,8 +264,10 @@ int run_vm(struct vm *vm, struct vcpu *vcpu, size_t sz)
 
                     continue;
                 }
+
+                printf("KVM_EXIT_IO_OUT: Unhandled port: %u\n",
+                        vcpu->kvm_run->io.port);
 			} else if (vcpu->kvm_run->io.direction == KVM_EXIT_IO_IN) {
-                uint16_t port = vcpu->kvm_run->io.port;
                 if (port == 0xEB) {
                     char *p = (char *)vcpu->kvm_run;
                     uint32_t *dest =
@@ -210,7 +276,11 @@ int run_vm(struct vm *vm, struct vcpu *vcpu, size_t sz)
                     vcpu->kvm_run->io.size = 4;
                     continue;
                 }
+
+                printf("KVM_EXIT_IO_IN: Unhandled port: %u\n",
+                        vcpu->kvm_run->io.port);
             }
+        }
 
 			/* fall through */
 		default:
@@ -277,12 +347,12 @@ static void setup_long_mode(struct vm *vm, struct kvm_sregs *sregs)
 	uint64_t pd_addr = 0x4000;
 	uint64_t *pd = (void *)(vm->mem + pd_addr);
 
-	pml4[0] = PDE64_PRESENT | PDE64_RW | pdpt_addr;
-	pdpt[0] = PDE64_PRESENT | PDE64_RW | pd_addr;
+	pml4[0] = PDE64_PRESENT | PDE64_RW | PDE64_USER | pdpt_addr;
+	pdpt[0] = PDE64_PRESENT | PDE64_RW | PDE64_USER | pd_addr;
 	pd[0] = PDE64_PRESENT | PDE64_RW | PDE64_PS;
 
 	sregs->cr3 = pml4_addr;
-	sregs->cr4 = CR4_PAE;
+	sregs->cr4 = CR4_PAE | CR4_OSFXSR | CR4_OSXMMEXCPT;
 	sregs->cr0
 		= CR0_PE | CR0_MP | CR0_ET | CR0_NE | CR0_WP | CR0_AM | CR0_PG;
 	sregs->efer = EFER_LME | EFER_LMA | EFER_SCE;
@@ -334,6 +404,8 @@ int main(int argc, char **argv)
 		LONG_MODE,
 	} mode = LONG_MODE;
 	int opt;
+
+    init_vm_fds();
 
 	while ((opt = getopt(argc, argv, "l")) != -1) {
 		switch (opt) {

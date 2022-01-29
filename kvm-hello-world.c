@@ -102,6 +102,24 @@ static int add_vm_fd(void)
     return -ENFILE;
 }
 
+static void hc_handle_close(struct kvm_run *run) {
+    static ssize_t ret;
+    
+    if (run->io.direction == KVM_EXIT_IO_OUT) {
+        uint32_t fd = 
+            *(uint32_t *)((uint8_t *)run + run->io.data_offset);
+        printf("Trying to close: %i\n", fd);
+        vm_fds[fd].open = false;
+        ret = close(vm_fds[fd].hv_fd);
+
+    } else if (run->io.direction == KVM_EXIT_IO_IN) {
+        int32_t *dest = 
+            (int32_t *)((uint8_t *)run + run->io.data_offset);
+        *dest = (int32_t)ret;
+        run->io.size = 4;
+    }
+}
+
 static void hc_handle_open(struct vm *vm, struct kvm_run *run) {
     static int fd_vm;
 
@@ -135,8 +153,8 @@ static void hc_handle_print_str(struct vm *vm, struct kvm_run *run) {
 static void hc_handle_print_int(struct kvm_run *run) {
     int32_t *value = 
         (int32_t *)((uint8_t *)run + run->io.data_offset);
-    //printf("value: 0x%x\n", *value);
-    printf("value: %i\n", *value);
+    printf("value: 0x%x\n", *value);
+    printf("value i: %i\n", *value);
 }
 
 void vm_init(struct vm *vm, size_t mem_size)
@@ -242,6 +260,9 @@ int run_vm(struct vm *vm, struct vcpu *vcpu, size_t sz)
             uint16_t port = vcpu->kvm_run->io.port;
             if (port & HC_VECTOR) {
                 switch(port) {
+                    case HC_CLOSE:
+                        hc_handle_close(vcpu->kvm_run);
+                        break;
                     case HC_OPEN:
                         hc_handle_open(vm, vcpu->kvm_run);
                         break;

@@ -10,12 +10,12 @@ static void out(uint16_t port, uint32_t value) {
 }
 
 static void hc_print_str(const char *str) {
-    uint32_t str_trunc = (uint32_t) ((uint64_t)str & 0xFFFFFFFF);
+    uint32_t str_trunc = (uint32_t)((uint64_t)str & 0xFFFFFFFF);
     out(HC_PRINT_STR, str_trunc);
 }
 
-static void hc_print_int(uint32_t value) {
-    out(HC_PRINT_INT, value);
+static void hc_print_int(int32_t value) {
+    out(HC_PRINT_INT, (uint32_t)value);
 }
 
 static void hc_open(const char *fn) {
@@ -30,8 +30,6 @@ void
 __attribute__((noreturn))
 __attribute__((section(".start")))
 _start(void) {
-	const char *p;
-
     hc_print_int(0x30313233);
 
     // not working: causes IO_EXIT on port 0...

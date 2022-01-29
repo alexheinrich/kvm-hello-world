@@ -1,5 +1,5 @@
 CC := gcc
-CFLAGS := -Wall -Wextra -O2
+CFLAGS := -Wall -Wextra -Wconversion -O2
 GUEST_DIR := guest
 
 .PHONY: run

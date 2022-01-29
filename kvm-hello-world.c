@@ -117,11 +117,11 @@ static void hc_handle_open(struct vm *vm, struct kvm_run *run) {
         int fd_hv = open(fn, O_RDONLY);
 
         vm_fds[fd_vm].hv_fd = fd_hv;
-        *fn_off = fd_vm;
+        *fn_off = (uint32_t)fd_vm;
     } else if (run->io.direction == KVM_EXIT_IO_IN) {
         uint32_t *dest = 
             (uint32_t *)((uint8_t *)run + run->io.data_offset);
-        *dest = fd_vm;
+        *dest = (uint32_t)fd_vm;
         run->io.size = 4;
     }
 }
@@ -132,10 +132,11 @@ static void hc_handle_print_str(struct vm *vm, struct kvm_run *run) {
     printf("string: %s\n", &vm->mem[*value]);
 }
 
-static void hc_handle_print_int(struct vm *vm, struct kvm_run *run) {
-    uint32_t *value = 
-        (uint32_t *)((uint8_t *)run + run->io.data_offset);
-    printf("value: 0x%x\n", *value);
+static void hc_handle_print_int(struct kvm_run *run) {
+    int32_t *value = 
+        (int32_t *)((uint8_t *)run + run->io.data_offset);
+    //printf("value: 0x%x\n", *value);
+    printf("value: %i\n", *value);
 }
 
 void vm_init(struct vm *vm, size_t mem_size)
@@ -199,21 +200,19 @@ struct vcpu {
 
 void vcpu_init(struct vm *vm, struct vcpu *vcpu)
 {
-	int vcpu_mmap_size;
-
 	vcpu->fd = ioctl(vm->fd, KVM_CREATE_VCPU, 0);
     if (vcpu->fd < 0) {
 		perror("KVM_CREATE_VCPU");
                 exit(1);
 	}
 
-	vcpu_mmap_size = ioctl(vm->sys_fd, KVM_GET_VCPU_MMAP_SIZE, 0);
+	int vcpu_mmap_size = ioctl(vm->sys_fd, KVM_GET_VCPU_MMAP_SIZE, 0);
     if (vcpu_mmap_size <= 0) {
 		perror("KVM_GET_VCPU_MMAP_SIZE");
                 exit(1);
 	}
 
-	vcpu->kvm_run = mmap(NULL, vcpu_mmap_size, PROT_READ | PROT_WRITE,
+	vcpu->kvm_run = mmap(NULL, (size_t)vcpu_mmap_size, PROT_READ | PROT_WRITE,
 			     MAP_SHARED, vcpu->fd, 0);
 	if (vcpu->kvm_run == MAP_FAILED) {
 		perror("mmap kvm_run");
@@ -250,7 +249,7 @@ int run_vm(struct vm *vm, struct vcpu *vcpu, size_t sz)
                         hc_handle_print_str(vm, vcpu->kvm_run);
                         break;
                     case HC_PRINT_INT:
-                        hc_handle_print_int(vm, vcpu->kvm_run);
+                        hc_handle_print_int(vcpu->kvm_run);
                         break;
                 }
                 continue;
@@ -366,42 +365,23 @@ int run_long_mode(struct vm *vm, struct vcpu *vcpu)
 		exit(1);
 	}
 
-	memcpy(vm->mem, guest64, guest64_end-guest64);
+	memcpy(vm->mem, guest64, (size_t)(guest64_end-guest64));
 	return run_vm(vm, vcpu, 8);
 }
 
 
 int main(int argc, char **argv)
 {
+    (void) argc;
+    (void) argv;
+
 	struct vm vm;
 	struct vcpu vcpu;
-	enum {
-		LONG_MODE,
-	} mode = LONG_MODE;
-	int opt;
 
     init_vm_fds();
 
-	while ((opt = getopt(argc, argv, "l")) != -1) {
-		switch (opt) {
-		case 'l':
-			mode = LONG_MODE;
-			break;
-
-		default:
-			fprintf(stderr, "Usage: %s [ -l ]\n",
-				argv[0]);
-			return 1;
-		}
-	}
-
-	vm_init(&vm, 0x2000000);
+    vm_init(&vm, 0x2000000);
 	vcpu_init(&vm, &vcpu);
 
-	switch (mode) {
-	case LONG_MODE:
-		return !run_long_mode(&vm, &vcpu);
-	}
-
-	return 1;
+    return !run_long_mode(&vm, &vcpu);
 }

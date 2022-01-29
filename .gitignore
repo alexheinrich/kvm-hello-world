@@ -1,4 +1,6 @@
+compile_commands.json
 kvm-hello-world
 *.o
 *.img
 *.sw*
+.cache/

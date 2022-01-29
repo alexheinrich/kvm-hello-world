@@ -102,7 +102,7 @@ static int add_vm_fd(void)
     return -ENFILE;
 }
 
-static void hv_handle_open(struct vm *vm, struct kvm_run *run) {
+static void hc_handle_open(struct vm *vm, struct kvm_run *run) {
     static int fd_vm;
 
     if (run->io.direction == KVM_EXIT_IO_OUT) {
@@ -124,6 +124,18 @@ static void hv_handle_open(struct vm *vm, struct kvm_run *run) {
         *dest = fd_vm;
         run->io.size = 4;
     }
+}
+
+static void hc_handle_print_str(struct vm *vm, struct kvm_run *run) {
+    uint32_t *value = 
+        (uint32_t *)((uint8_t *)run + run->io.data_offset);
+    printf("string: %s\n", &vm->mem[*value]);
+}
+
+static void hc_handle_print_int(struct vm *vm, struct kvm_run *run) {
+    uint32_t *value = 
+        (uint32_t *)((uint8_t *)run + run->io.data_offset);
+    printf("value: 0x%x\n", *value);
 }
 
 void vm_init(struct vm *vm, size_t mem_size)
@@ -229,56 +241,19 @@ int run_vm(struct vm *vm, struct vcpu *vcpu, size_t sz)
 
 		case KVM_EXIT_IO: {
             uint16_t port = vcpu->kvm_run->io.port;
-            if (vcpu->kvm_run->io.port & HC_VECTOR) {
+            if (port & HC_VECTOR) {
                 switch(port) {
                     case HC_OPEN:
-                        hv_handle_open(vm, vcpu->kvm_run);
+                        hc_handle_open(vm, vcpu->kvm_run);
+                        break;
+                    case HC_PRINT_STR:
+                        hc_handle_print_str(vm, vcpu->kvm_run);
+                        break;
+                    case HC_PRINT_INT:
+                        hc_handle_print_int(vm, vcpu->kvm_run);
                         break;
                 }
                 continue;
-            }
-
-			if (vcpu->kvm_run->io.direction == KVM_EXIT_IO_OUT) {
-                if (port == 0xE9) {
-                    char *p = (char *)vcpu->kvm_run;
-                    fwrite(p + vcpu->kvm_run->io.data_offset,
-                           vcpu->kvm_run->io.size, 1, stdout);
-                    fflush(stdout);
-                    continue;
-                } else if (port == 0xEA) {
-                    char *p = (char *)vcpu->kvm_run;
-                    uint32_t *value = 
-                        (uint32_t *)(p + vcpu->kvm_run->io.data_offset);
-                    printf("value: 0x%x\n", *value);
-                    //fwrite(p + vcpu->kvm_run->io.data_offset,
-                    //      1, vcpu->kvm_run->io.size, stdout);
-                    //fwrite("\n", 1, 1, stdout);
-                    //fflush(stdout);
-                    
-                    continue;
-                } else if (port == 0xEC) {
-                    char *p = (char *)vcpu->kvm_run;
-                    uint32_t *value = 
-                        (uint32_t *)(p + vcpu->kvm_run->io.data_offset);
-                    printf("string: %s\n", &vm->mem[*value]);
-
-                    continue;
-                }
-
-                printf("KVM_EXIT_IO_OUT: Unhandled port: %u\n",
-                        vcpu->kvm_run->io.port);
-			} else if (vcpu->kvm_run->io.direction == KVM_EXIT_IO_IN) {
-                if (port == 0xEB) {
-                    char *p = (char *)vcpu->kvm_run;
-                    uint32_t *dest =
-                        (uint32_t *)(p + vcpu->kvm_run->io.data_offset);
-                    *dest = numExits;
-                    vcpu->kvm_run->io.size = 4;
-                    continue;
-                }
-
-                printf("KVM_EXIT_IO_IN: Unhandled port: %u\n",
-                        vcpu->kvm_run->io.port);
             }
         }
 

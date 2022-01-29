@@ -25,6 +25,14 @@ static void hc_print_int(int32_t value) {
     out(HC_PRINT_INT, (uint32_t)value);
 }
 
+static void hc_read(int fd, char *buf, size_t len) {
+    asm("push %0" : : "b" (buf) : "memory");
+    asm("push %0" : : "c" (len) : "memory");
+    asm("out %0,%1" : "+a" (fd) : "Nd" (HC_READ) : "memory");
+    hc_print_int(2);
+    hc_print_int(fd);
+}
+
 static int hc_open(const char *fn) {
     uint32_t fn_uint = (uint32_t)((uint64_t)fn & 0xFFFFFFFF);
 
@@ -57,6 +65,11 @@ _start(void) {
     if (fd < 0) {
         hc_print_str("Error: hc_open()\n");
     }
+
+    char buf[0x100];
+    hc_read(fd, buf, 0x100);
+
+    hc_print_str(buf);
 
     if (hc_close(fd) < 0) {
         hc_print_str("Error: hc_close()\n");

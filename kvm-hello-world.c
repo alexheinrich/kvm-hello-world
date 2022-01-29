@@ -79,6 +79,11 @@ typedef struct {
     int hv_fd;
 } fd_t;
 
+struct vcpu {
+	int fd;
+	struct kvm_run *kvm_run;
+};
+
 fd_t vm_fds[MAX_FS];
 
 static void init_vm_fds(void)
@@ -100,6 +105,33 @@ static int add_vm_fd(void)
     }
 
     return -ENFILE;
+}
+
+static int hc_handle_read(struct vm *vm, struct vcpu *vcpu) {
+    struct kvm_regs regs;
+	if (ioctl(vcpu->fd, KVM_GET_REGS, &regs) < 0) {
+		perror("KVM_GET_REGS");
+        return -1;
+	}
+
+    printf("Got rax: %llx\n", regs.rax);
+    printf("Got rbx: %llx\n", regs.rbx);
+    printf("Got rcx: %llu\n", regs.rcx);
+
+    int vm_fd = (int)regs.rax;
+    char *buf = &vm->mem[regs.rbx];
+    size_t len = regs.rcx;
+
+    printf("Got buf: %s\n", buf);
+
+    regs.rax = (uint64_t)read(vm_fds[vm_fd].hv_fd, buf, len);
+
+	if (ioctl(vcpu->fd, KVM_SET_REGS, &regs) < 0) {
+		perror("KVM_SET_REGS");
+        return -1;
+	}
+
+    return 0;
 }
 
 static void hc_handle_close(struct kvm_run *run) {
@@ -211,11 +243,6 @@ void vm_init(struct vm *vm, size_t mem_size)
 	}
 }
 
-struct vcpu {
-	int fd;
-	struct kvm_run *kvm_run;
-};
-
 void vcpu_init(struct vm *vm, struct vcpu *vcpu)
 {
 	vcpu->fd = ioctl(vm->fd, KVM_CREATE_VCPU, 0);
@@ -260,6 +287,13 @@ int run_vm(struct vm *vm, struct vcpu *vcpu, size_t sz)
             uint16_t port = vcpu->kvm_run->io.port;
             if (port & HC_VECTOR) {
                 switch(port) {
+                    case HC_READ:
+                        if (hc_handle_read(vm, vcpu) < 0) {
+                            // ioctl failed... what to do?
+                            printf("ioctl in hc_handle_read failed\n");
+                            exit(1);
+                        }
+                        break;
                     case HC_CLOSE:
                         hc_handle_close(vcpu->kvm_run);
                         break;
